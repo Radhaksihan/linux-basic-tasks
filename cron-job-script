@@ -1,0 +1,29 @@
+#!/bin/bash
+# =====================================================
+# Script Name : system_health_cron.sh
+# Purpose     : Create a cron job using shell scripting
+# Description : Logs date and disk usage every minute
+# OS          : Ubuntu / Linux
+# =====================================================
+
+SCRIPT_PATH="$(realpath $0)"
+LOG_FILE="$HOME/system_health.log"
+CRON_JOB="* * * * * /bin/bash $SCRIPT_PATH"
+
+echo "-------------------------------------" >> "$LOG_FILE"
+echo "Date: $(date)" >> "$LOG_FILE"
+echo "Disk Usage:" >> "$LOG_FILE"
+df -h >> "$LOG_FILE"
+echo "-------------------------------------" >> "$LOG_FILE"
+
+# Check if cron job already exists
+(crontab -l 2>/dev/null | grep -F "$SCRIPT_PATH") >/dev/null
+
+if [ $? -ne 0 ]; then
+    echo "Adding cron job..."
+    (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
+    echo "Cron job added successfully."
+else
+    echo "Cron job already exists."
+fi
+
