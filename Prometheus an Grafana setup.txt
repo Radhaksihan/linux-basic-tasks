@@ -1,0 +1,69 @@
+#!/bin/bash
+set -e
+
+echo "======================================"
+echo " Prometheus + Grafana Monitoring Setup"
+echo "======================================"
+
+# ---------- STEP 1 : Install Node Exporter ----------
+echo "[1/4] Installing Node Exporter..."
+cd /tmp
+wget -q https://github.com/prometheus/node_exporter/releases/download/v1.10.2/node_exporter-1.10.2.linux-amd64.tar.gz
+tar -xf node_exporter-1.10.2.linux-amd64.tar.gz
+sudo mv node_exporter-1.10.2.linux-amd64/node_exporter /usr/local/bin/
+nohup node_exporter > /dev/null 2>&1 &
+
+echo "Node Exporter running on port 9100"
+
+# ---------- STEP 2 : Install Prometheus ----------
+echo "[2/4] Installing Prometheus..."
+cd /tmp
+wget -q https://github.com/prometheus/prometheus/releases/download/v2.52.0/prometheus-2.52.0.linux-amd64.tar.gz
+tar -xf prometheus-2.52.0.linux-amd64.tar.gz
+cd prometheus-2.52.0.linux-amd64
+
+# Create Prometheus config
+cat <<EOF > prometheus.yml
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+EOF
+
+nohup ./prometheus --config.file=prometheus.yml > /dev/null 2>&1 &
+
+echo "Prometheus running on port 9090"
+
+# ---------- STEP 3 : Install Grafana ----------
+echo "[3/4] Installing Grafana..."
+sudo apt update -y > /dev/null
+sudo apt install -y apt-transport-https software-properties-common wget > /dev/null
+
+wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add - > /dev/null
+echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee /etc/apt/sources.list.d/grafana.list > /dev/null
+
+sudo apt update -y > /dev/null
+sudo apt install -y grafana > /dev/null
+
+sudo systemctl daemon-reload
+sudo systemctl enable grafana-server > /dev/null
+sudo systemctl start grafana-server
+
+echo "Grafana running on port 3000"
+
+# ---------- STEP 4 : Final Message ----------
+echo ""
+echo "======================================"
+echo " INSTALLATION COMPLETE"
+echo "======================================"
+echo "Node Exporter : http://<server-ip>:9100/metrics"
+echo "Prometheus   : http://<server-ip>:9090"
+echo "Grafana      : http://<server-ip>:3000"
+echo ""
+echo "Grafana Login → admin / admin"
+echo "Add Prometheus datasource → http://localhost:9090"
+echo "Import Dashboard ID → 1860"
+echo "======================================"
