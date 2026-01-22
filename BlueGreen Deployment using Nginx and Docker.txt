@@ -1,0 +1,126 @@
+# ================================
+# BLUE-GREEN DEPLOYMENT WITH DOCKER + NGINX
+# Environment: Ubuntu (KodeKloud Linux Playground)
+# ================================
+
+
+# ----- STEP 1: Install Docker -----
+
+apt update
+apt install -y docker.io
+systemctl enable --now docker
+docker --version
+
+
+# ----- STEP 2: Create BLUE Application (Version 1) -----
+
+mkdir -p ~/bluegreen/app_v1
+cd ~/bluegreen/app_v1
+
+cat <<EOF > index.html
+<h1>Application Version 1 - BLUE</h1>
+EOF
+
+cat <<EOF > Dockerfile
+FROM nginx:alpine
+COPY index.html /usr/share/nginx/html/index.html
+EOF
+
+docker build -t app:v1 .
+docker run -d --name blue -p 8081:80 app:v1
+
+# Test BLUE
+curl http://localhost:8081
+
+
+# ----- STEP 3: Create GREEN Application (Version 2) -----
+
+mkdir -p ~/bluegreen/app_v2
+cd ~/bluegreen/app_v2
+
+cat <<EOF > index.html
+<h1>Application Version 2 - GREEN</h1>
+EOF
+
+cat <<EOF > Dockerfile
+FROM nginx:alpine
+COPY index.html /usr/share/nginx/html/index.html
+EOF
+
+docker build -t app:v2 .
+docker run -d --name green -p 8082:80 app:v2
+
+# Test GREEN
+curl http://localhost:8082
+
+
+# ----- STEP 4: Setup Nginx Reverse Proxy (Routes to BLUE) -----
+
+mkdir -p ~/bluegreen/proxy
+cd ~/bluegreen/proxy
+
+cat <<EOF > nginx.conf
+events {}
+
+http {
+    upstream backend {
+        server 127.0.0.1:8081;
+    }
+
+    server {
+        listen 80;
+        location / {
+            proxy_pass http://backend;
+        }
+    }
+}
+EOF
+
+docker rm -f nginx-proxy 2>/dev/null
+
+docker run -d --name nginx-proxy \
+--network host \
+-v ~/bluegreen/proxy/nginx.conf:/etc/nginx/nginx.conf:ro \
+nginx:alpine
+
+# Test Live BLUE through proxy
+curl http://localhost
+
+
+# ----- STEP 5: Zero-Downtime Switch (BLUE → GREEN) -----
+
+cat <<EOF > ~/bluegreen/proxy/nginx.conf
+events {}
+
+http {
+    upstream backend {
+        server 127.0.0.1:8082;
+    }
+
+    server {
+        listen 80;
+        location / {
+            proxy_pass http://backend;
+        }
+    }
+}
+EOF
+
+# Reload Nginx without downtime
+docker exec nginx-proxy nginx -s reload
+
+# Test Live GREEN through proxy
+curl http://localhost
+
+
+# ----- STEP 6: Optional Cleanup -----
+
+docker stop blue
+docker rm blue
+
+
+# ================================
+# RESULT:
+# Users → Nginx Proxy → GREEN (v2)
+# Zero-Downtime Blue-Green Deployment Completed
+# ================================
