@@ -1,0 +1,268 @@
+# =========================================================
+# MULTI-SERVICE APPLICATION DEPLOYMENT ON KUBERNETES
+# Environment: KodeKloud Kubernetes Single-Node Playground
+# Namespace: multistack
+# Services: MongoDB, Redis, API, Frontend, Nginx Ingress
+# =========================================================
+
+
+# ---------- STEP 1: Create Namespace ----------
+
+kubectl create namespace multistack
+kubectl config set-context --current --namespace=multistack
+
+
+# ---------- STEP 2: Deploy MongoDB ----------
+
+kubectl create secret generic mongo-secret \
+--from-literal=MONGO_INITDB_ROOT_USERNAME=admin \
+--from-literal=MONGO_INITDB_ROOT_PASSWORD=admin123
+
+cat <<EOF > mongo-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - name: mongo
+        image: mongo:6
+        ports:
+        - containerPort: 27017
+        envFrom:
+        - secretRef:
+            name: mongo-secret
+        volumeMounts:
+        - name: mongo-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-storage
+        emptyDir: {}
+EOF
+
+kubectl apply -f mongo-deployment.yaml
+
+cat <<EOF > mongo-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-service
+spec:
+  selector:
+    app: mongo
+  ports:
+    - port: 27017
+      targetPort: 27017
+EOF
+
+kubectl apply -f mongo-service.yaml
+
+
+# ---------- STEP 3: Deploy Redis ----------
+
+cat <<EOF > redis-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7
+        ports:
+        - containerPort: 6379
+EOF
+
+kubectl apply -f redis-deployment.yaml
+
+cat <<EOF > redis-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+EOF
+
+kubectl apply -f redis-service.yaml
+
+
+# ---------- STEP 4: Deploy API Service ----------
+
+cat <<EOF > api-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: hashicorp/http-echo
+        args:
+          - "-text=Hello from API Service"
+        ports:
+        - containerPort: 5678
+EOF
+
+kubectl apply -f api-deployment.yaml
+
+cat <<EOF > api-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 3000
+      targetPort: 5678
+EOF
+
+kubectl apply -f api-service.yaml
+
+
+# ---------- STEP 5: Deploy Frontend ----------
+
+cat <<EOF > frontend-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-html
+data:
+  index.html: |
+    <h1>Frontend Service Running</h1>
+    <p>API Response:</p>
+    <iframe src="http://api-service:3000" width="400" height="100"></iframe>
+EOF
+
+kubectl apply -f frontend-configmap.yaml
+
+cat <<EOF > frontend-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html
+        configMap:
+          name: frontend-html
+EOF
+
+kubectl apply -f frontend-deployment.yaml
+
+cat <<EOF > frontend-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+EOF
+
+kubectl apply -f frontend-service.yaml
+
+
+# ---------- STEP 6: Install Nginx Ingress Controller ----------
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/baremetal/deploy.yaml
+
+
+# ---------- STEP 7: Create Ingress Rule ----------
+
+cat <<EOF > frontend-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+EOF
+
+kubectl apply -f frontend-ingress.yaml
+
+
+# ---------- STEP 8: Verify ----------
+
+kubectl get pods
+kubectl get svc
+kubectl get ingress
+
+
+# ---------- STEP 9: Access Application ----------
+
+# In KodeKloud Playground:
+# Click "View Port"
+# Enter Port: 80
+# Open in Browser
+
+# You should see:
+# Frontend Service Running
+# Hello from API Service
+
+# =========================================================
+# MULTI-SERVICE KUBERNETES PROJECT COMPLETED
+# =========================================================
